@@ -1,6 +1,6 @@
 'use strict'
 
-var util = require('util');
+var inherits = require('util').inherits;
 var EventEmitter = require('events').EventEmitter;
 var p2p = require('bitcore-p2p');
 var messages = new p2p.Messages();
@@ -13,6 +13,7 @@ var Peer = function(opts) {
   this._onTx = this._opts.onTx || function() {};
   this._onBlock = this._opts.onBlock || function() {};
   this._onInv = this._opts.onInv || function() {};
+  this._pool = this._opts.pool;
 
   //p2p options
   this._host = this._opts.host || '127.0.0.1';
@@ -37,7 +38,7 @@ var Peer = function(opts) {
   this._id = this._opts.id;
 };
 
-util.inherits(Peer, EventEmitter);
+inherits(Peer, EventEmitter);
 
 Peer.prototype.getData = function(invObjs) {
   assert(_.isArray(invObjs), 'getData is supposed to receive an array.');
@@ -64,17 +65,20 @@ Peer.prototype.createAddress = function() {
 };
 
 Peer.prototype._ready = function() {
-  this._log(peer.version + ' ' + peer.subversion + ' ' + peer.bestHeight);
-  this.currentHeight = peer.bestHeight;
+  this._log(this._peer.version + ' ' + this._peer.subversion + ' ' + this._peer.bestHeight);
+  this.currentHeight = this._peer.bestHeight;
   //wait 1 sec to before blasting out new messages at the peer
   setTimeout(function() {
-    peer.sendMessage(messages.MemPool());
+    this._peer.sendMessage(messages.MemPool());
   }, 1000);
 };
 
-Peer.prototype.setupListeners = function() {
+Peer.prototype.setupListeners = function(peer) {
+  var self = this;
   this._peer.on('ready', this._ready.bind(this));
-  this._peer.on('inv', this._onInv.bind(this._peer));
+  this._peer.on('inv', function(message) {
+    self._onInv(self._pool, message);
+  });
   this._peer.on('tx', this._onTx);
   this._peer.on('block', this._onBlock);
 };

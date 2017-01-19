@@ -14,14 +14,13 @@ var Mempool = require('./mempool');
 var Blockchain = require('./blockchain');
 var PeerListRetriever = require('./peer-retriever');
 var PeerPool = require('./peer-pool');
+var myPeers = require('mypeers.json');
 
 var UntrustedMempool = function(opts) {
   this._opts = opts || {};
   this._peerHostList = this._opts.peerHostList || ['seeds.bitnodes.io'];
-  // if peers are passed in, we'll assume that listeners are already set on each peer and all that's needed to call the connect method
   this._peerObjList = this._opts.peerObjList || {};
   this._mempool = this._opts.mempool || new Mempool();
-  this._blockchain = this._opts.blockchain || new Blockchain({ startingBlock: 447879 });
   this._currentHash = null;
   this._prevHash = null;
 };
@@ -29,25 +28,25 @@ var UntrustedMempool = function(opts) {
 UntrustedMempool.prototype.create = function() {
   var self = this;
   var peerKeys = Object.keys(self._peerObjList);
+
   if (peerKeys.length === 0) {
-    var peerFactory = new PeerPool({
+    var peerPool = new PeerPool({
       peerHostList: self._peerHostList,
-      onTx: self.onTx.bind(self),
+      onTx: self.onTx,
       onBlock: self.onBlock.bind(self)
     });
-    self._peerObjList = peerFactory.create();
+    self._peerObjList = peerPool.create();
+    peerKeys = Object.keys(self._peerObjList);
   }
 
+  console.log(peerKeys);
   peerKeys.forEach(function(peerKey) {
     self._peerObjList[peerKey].connect();
   });
 
-  self._blockchain.startMonitor();
-
 };
 
 UntrustedMempool.prototype._connectBlock = function(block) {
-  //this is an untrusted mempool,so we aren't going to do any reorg checks
   this._currentHash = block.header.hash.toString('hex');
   this._prevHash = block.header.prevHash.reverse().toString('hex');
   return true;
@@ -70,28 +69,21 @@ UntrustedMempool.prototype.onBlock = function(message) {
   console.log('New Block Hash is: ', this.currentHash);
   console.log('Prev Block Hash is: ', this.prevHash);
   console.log('New Block has: ' + message.block.getTransactionHashes().length + ' txs');
-
-  this._mempool.removeBatch(message.block.getTransactionHashes(), function(err, res) {
-    if(err) {
-      return console.log(err.message);
-    }
-    console.log('Memory Pool size before applying block: ', res[1]);
-    console.log('Removed tx count: ', (res[1]-res[2]));
-    console.log('Final length of mempool: ', res[2]);
-    console.log('Count of txs that were in block, but apparently not in our mempool: ', (res[0]-(res[1]-res[2])));
-    console.log('*******************************************************************************');
-  });
+  var preRemove = this._mempool.length;
+  var afterRemove = this._mempool.removeBatch(message.block.getTransactionHashes());
+  console.log('Memory Pool size before applying block: ', preRemove);
+  console.log('Final length of mempool: ', afterRemove);
+  console.log('*******************************************************************************');
 };
 
-UntrustedMempool.prototype.onTx = function(message) {
+UntrustedMempool.prototype.onTx = function(message, peer) {
   var txid = message.transaction.hash.toString('hex');
-  if (this._mempool.add(txid, 'tx') !== 1) {
-    console.log('Failed to add: ' + txid + ' to the mempool');
-  }
+  var metaTx = { ip: peer.ip };
+  this._mempool.add(txid, metaTx);
 };
 
 var peerListRetriever = new PeerListRetriever();
-var untrustedMempool = new UntrustedMempool({ peerHostList: ['192.168.3.5'] });
+var untrustedMempool = new UntrustedMempool({ peerHostList: myPeers });
 untrustedMempool.create();
 //peerListRetriever.getPeerList(function(err, peerList) {
 //  if(err) {

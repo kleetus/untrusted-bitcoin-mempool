@@ -19,6 +19,7 @@ PeerPool.prototype.create = function() {
     var peer = self._create(host);
     self._peerObjList[peer.address] = peer;
   });
+
   return self._peerObjList;
 };
 
@@ -27,18 +28,19 @@ PeerPool.prototype._create = function(host) {
     host: host,
     onTx: this._onTx,
     onBlock: this._onBlock,
-    onInv: this._onInv
+    onInv: this._onInv,
+    pool: this._pool //this is so the peer can call my inv listener with the problem context
   });
   peer.setupListeners();
   peer.createAddress();
   return peer;
 };
 
+//this is called A LOT, so I'd like this to be compiled by the optimizing compiler
+//and not the generic compiler
 PeerPool.prototype._onInv = function(message) {
   // TODO: assumes inv object ids are unique across peers
-  var peer = this;
-
-  assert(peer.address, 'There was not a peer to operate on.');
+  var self = this; //this will be the peerpool instance
 
   var invObjs = [];
   message.inventory.forEach(function(inv) {
@@ -47,11 +49,10 @@ PeerPool.prototype._onInv = function(message) {
       invObjs.push(inv);
     }
   });
+
   if (invObjs.length > 0) {
     peer.getData(invObjs);
   }
 };
 
 module.exports = PeerPool;
-
-
